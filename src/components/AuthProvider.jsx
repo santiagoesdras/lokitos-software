@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useEffect, useState } from 'react'
-import { supabase } from '../lib/supabase'
+import { supabase, hasSupabaseConfig } from '../lib/supabase'
 
 const AuthContext = createContext()
 
@@ -8,6 +8,10 @@ export function AuthProvider({ children }){
 
   // Helper to verify and enforce 12h session expiration
   const checkSessionExpiry = async () => {
+    if (!supabase || !hasSupabaseConfig()) {
+      return false
+    }
+
     const loginTimeStr = localStorage.getItem('login_time')
     if (loginTimeStr) {
       const loginTime = parseInt(loginTimeStr)
@@ -27,7 +31,19 @@ export function AuthProvider({ children }){
   useEffect(()=>{
     let mounted = true
 
+    if (!supabase || !hasSupabaseConfig()) {
+      setUser(null)
+      return () => {
+        mounted = false
+      }
+    }
+
     async function load(){
+      if (!supabase || !hasSupabaseConfig()) {
+        setUser(null)
+        return
+      }
+
       const isExpired = await checkSessionExpiry()
       if (isExpired) return
 
@@ -123,6 +139,10 @@ export function AuthProvider({ children }){
   },[])
 
   const signIn = async (email, password) => {
+    if (!supabase || !hasSupabaseConfig()) {
+      return { error: { message: 'Falta configurar Supabase en Vercel. Revisa las variables VITE_SUPABASE_URL y VITE_SUPABASE_ANON_KEY.' } }
+    }
+
     const res = await supabase.auth.signInWithPassword({ email, password })
     if (res.data?.session) {
       localStorage.setItem('login_time', Date.now().toString())
@@ -132,6 +152,9 @@ export function AuthProvider({ children }){
 
   const signOut = async ()=>{
     localStorage.removeItem('login_time')
+    if (!supabase || !hasSupabaseConfig()) {
+      return { error: null }
+    }
     return supabase.auth.signOut()
   }
 

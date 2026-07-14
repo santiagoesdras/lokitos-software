@@ -1,5 +1,6 @@
 import React from 'react'
 import { Routes, Route, Link, useNavigate, useLocation } from 'react-router-dom'
+import { hasSupabaseConfig } from './lib/supabase'
 import Ventas from './pages/Ventas'
 import Admin from './pages/Admin'
 import ProductsPage from './pages/Products'
@@ -50,6 +51,28 @@ function Header(){
 }
 
 export default function App() {
+  const configured = hasSupabaseConfig()
+
+  if (!configured) {
+    return (
+      <div className="app">
+        <Header />
+        <main>
+          <div className="panel" style={{ maxWidth: 640, margin: '24px auto', padding: 24 }}>
+            <h2>Configuración pendiente</h2>
+            <p>La app está lista, pero falta configurar Supabase en Vercel.</p>
+            <p>Agrega estas variables de entorno en Vercel:</p>
+            <ul>
+              <li><strong>VITE_SUPABASE_URL</strong></li>
+              <li><strong>VITE_SUPABASE_ANON_KEY</strong></li>
+            </ul>
+            <p>Después redeploya la app.</p>
+          </div>
+        </main>
+      </div>
+    )
+  }
+
   return (
     <AuthProvider>
       <div className="app">

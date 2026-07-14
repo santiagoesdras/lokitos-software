@@ -1,0 +1,16 @@
+# Configuración de Supabase CLI
+# Documentación: https://supabase.com/docs/guides/cli/config
+
+project_id = ""
+
+[api]
+enabled = true
+
+[db]
+migrations_dir = "supabase/migrations"
+seed_sql_dir = "supabase/seed"
+
+[functions]
+# Configuración global de Edge Functions
+import_map = "./supabase/functions/import_map.json"
+verify_jwt = true
