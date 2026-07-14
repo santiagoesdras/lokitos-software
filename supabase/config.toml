@@ -1,0 +1,23 @@
+# Configuración de Supabase CLI
+# Documentación: https://supabase.com/docs/guides/cli/config
+
+[project]
+# Reemplazar YOUR-PROJECT-ID con tu ID de proyecto
+project_id = "YOUR-PROJECT-ID"
+region = "us-east-1"
+
+[api]
+# Configuración de la API
+enabled = true
+
+[db]
+# Configuración de base de datos
+migrations_dir = "supabase/migrations"
+seed_sql_dir = "supabase/seed"
+
+[functions]
+# Configuración de Edge Functions
+import_map = "./supabase/functions/import_map.json"
+
+# Tiempos de compilación y despliegue
+verify_jwt = true
