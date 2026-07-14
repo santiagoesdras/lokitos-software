@@ -1,3 +1,4 @@
+...
 # 🍔 Sistema POS - Lokitos
 
 Sistema de Punto de Venta web para negocio de venta de alimentos y bebidas con reportes y control administrativo.
