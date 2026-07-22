@@ -16,26 +16,45 @@ ALTER TABLE auditoria ENABLE ROW LEVEL SECURITY;
 -- Administrador puede ver, insertar, actualizar y desactivar usuarios
 CREATE POLICY usuarios_admin_select ON usuarios FOR SELECT TO authenticated
   USING (
-    auth.jwt() ->> 'role' = 'authenticated' AND
-    EXISTS (SELECT 1 FROM usuarios u WHERE u.id = auth.uid() AND u.role_id IN (SELECT id FROM roles WHERE nombre = 'Administrador'))
+    EXISTS (
+      SELECT 1
+      FROM usuarios u
+      WHERE u.email = auth.jwt() ->> 'email'
+        AND u.role_id IN (SELECT id FROM roles WHERE nombre = 'Administrador')
+    )
   );
 
 CREATE POLICY usuarios_admin_insert ON usuarios FOR INSERT TO authenticated
   WITH CHECK (
-    EXISTS (SELECT 1 FROM usuarios u WHERE u.id = auth.uid() AND u.role_id IN (SELECT id FROM roles WHERE nombre = 'Administrador'))
+    EXISTS (
+      SELECT 1
+      FROM usuarios u
+      WHERE u.email = auth.jwt() ->> 'email'
+        AND u.role_id IN (SELECT id FROM roles WHERE nombre = 'Administrador')
+    )
   );
 
 CREATE POLICY usuarios_admin_update ON usuarios FOR UPDATE TO authenticated
   USING (
-    EXISTS (SELECT 1 FROM usuarios u WHERE u.id = auth.uid() AND u.role_id IN (SELECT id FROM roles WHERE nombre = 'Administrador'))
+    EXISTS (
+      SELECT 1
+      FROM usuarios u
+      WHERE u.email = auth.jwt() ->> 'email'
+        AND u.role_id IN (SELECT id FROM roles WHERE nombre = 'Administrador')
+    )
   )
   WITH CHECK (
-    EXISTS (SELECT 1 FROM usuarios u WHERE u.id = auth.uid() AND u.role_id IN (SELECT id FROM roles WHERE nombre = 'Administrador'))
+    EXISTS (
+      SELECT 1
+      FROM usuarios u
+      WHERE u.email = auth.jwt() ->> 'email'
+        AND u.role_id IN (SELECT id FROM roles WHERE nombre = 'Administrador')
+    )
   );
 
 -- Cada usuario puede ver su propio perfil
 CREATE POLICY usuarios_self_select ON usuarios FOR SELECT TO authenticated
-  USING (id = auth.uid());
+  USING (email = auth.jwt() ->> 'email');
 
 -- 3. Políticas para tabla PRODUCTOS
 -- Todos pueden leer productos activos
@@ -44,15 +63,30 @@ CREATE POLICY productos_select ON productos FOR SELECT USING (activo = true);
 -- Solo administrador puede insertar, actualizar y desactivar
 CREATE POLICY productos_admin_write ON productos FOR INSERT TO authenticated
   WITH CHECK (
-    EXISTS (SELECT 1 FROM usuarios u WHERE u.id = auth.uid() AND u.role_id IN (SELECT id FROM roles WHERE nombre = 'Administrador'))
+    EXISTS (
+      SELECT 1
+      FROM usuarios u
+      WHERE u.email = auth.jwt() ->> 'email'
+        AND u.role_id IN (SELECT id FROM roles WHERE nombre = 'Administrador')
+    )
   );
 
 CREATE POLICY productos_admin_update ON productos FOR UPDATE TO authenticated
   USING (
-    EXISTS (SELECT 1 FROM usuarios u WHERE u.id = auth.uid() AND u.role_id IN (SELECT id FROM roles WHERE nombre = 'Administrador'))
+    EXISTS (
+      SELECT 1
+      FROM usuarios u
+      WHERE u.email = auth.jwt() ->> 'email'
+        AND u.role_id IN (SELECT id FROM roles WHERE nombre = 'Administrador')
+    )
   )
   WITH CHECK (
-    EXISTS (SELECT 1 FROM usuarios u WHERE u.id = auth.uid() AND u.role_id IN (SELECT id FROM roles WHERE nombre = 'Administrador'))
+    EXISTS (
+      SELECT 1
+      FROM usuarios u
+      WHERE u.email = auth.jwt() ->> 'email'
+        AND u.role_id IN (SELECT id FROM roles WHERE nombre = 'Administrador')
+    )
   );
 
 -- 4. Políticas para tabla CATEGORIAS
@@ -60,15 +94,30 @@ CREATE POLICY categorias_select ON categorias FOR SELECT USING (activo = true);
 
 CREATE POLICY categorias_admin_write ON categorias FOR INSERT TO authenticated
   WITH CHECK (
-    EXISTS (SELECT 1 FROM usuarios u WHERE u.id = auth.uid() AND u.role_id IN (SELECT id FROM roles WHERE nombre = 'Administrador'))
+    EXISTS (
+      SELECT 1
+      FROM usuarios u
+      WHERE u.email = auth.jwt() ->> 'email'
+        AND u.role_id IN (SELECT id FROM roles WHERE nombre = 'Administrador')
+    )
   );
 
 CREATE POLICY categorias_admin_update ON categorias FOR UPDATE TO authenticated
   USING (
-    EXISTS (SELECT 1 FROM usuarios u WHERE u.id = auth.uid() AND u.role_id IN (SELECT id FROM roles WHERE nombre = 'Administrador'))
+    EXISTS (
+      SELECT 1
+      FROM usuarios u
+      WHERE u.email = auth.jwt() ->> 'email'
+        AND u.role_id IN (SELECT id FROM roles WHERE nombre = 'Administrador')
+    )
   )
   WITH CHECK (
-    EXISTS (SELECT 1 FROM usuarios u WHERE u.id = auth.uid() AND u.role_id IN (SELECT id FROM roles WHERE nombre = 'Administrador'))
+    EXISTS (
+      SELECT 1
+      FROM usuarios u
+      WHERE u.email = auth.jwt() ->> 'email'
+        AND u.role_id IN (SELECT id FROM roles WHERE nombre = 'Administrador')
+    )
   );
 
 -- 5. Políticas para tabla VENTAS
@@ -76,13 +125,27 @@ CREATE POLICY categorias_admin_update ON categorias FOR UPDATE TO authenticated
 -- Administrador ve todas; vendedor ve solo las suyas
 CREATE POLICY ventas_admin_select ON ventas FOR SELECT TO authenticated
   USING (
-    EXISTS (SELECT 1 FROM usuarios u WHERE u.id = auth.uid() AND u.role_id IN (SELECT id FROM roles WHERE nombre = 'Administrador'))
+    EXISTS (
+      SELECT 1
+      FROM usuarios u
+      WHERE u.email = auth.jwt() ->> 'email'
+        AND u.role_id IN (SELECT id FROM roles WHERE nombre = 'Administrador')
+    )
   );
 
 CREATE POLICY ventas_vendedor_select ON ventas FOR SELECT TO authenticated
   USING (
-    usuario_id = auth.uid() AND
-    EXISTS (SELECT 1 FROM usuarios u WHERE u.id = auth.uid() AND u.role_id IN (SELECT id FROM roles WHERE nombre = 'Vendedor'))
+    usuario_id IN (
+      SELECT id
+      FROM usuarios
+      WHERE email = auth.jwt() ->> 'email'
+    )
+    AND EXISTS (
+      SELECT 1
+      FROM usuarios u
+      WHERE u.email = auth.jwt() ->> 'email'
+        AND u.role_id IN (SELECT id FROM roles WHERE nombre = 'Vendedor')
+    )
   );
 
 -- Edge Function inserta con contexto de admin/edge
@@ -91,32 +154,67 @@ CREATE POLICY ventas_vendedor_select ON ventas FOR SELECT TO authenticated
 -- 6. Políticas para tabla DETALLE_VENTA
 CREATE POLICY detalle_venta_select ON detalle_venta FOR SELECT TO authenticated
   USING (
-    venta_id IN (SELECT id FROM ventas WHERE usuario_id = auth.uid() OR EXISTS (SELECT 1 FROM usuarios u WHERE u.id = auth.uid() AND u.role_id IN (SELECT id FROM roles WHERE nombre = 'Administrador')))
+    venta_id IN (
+      SELECT id
+      FROM ventas
+      WHERE usuario_id IN (
+        SELECT id FROM usuarios WHERE email = auth.jwt() ->> 'email'
+      )
+      OR EXISTS (
+        SELECT 1
+        FROM usuarios u
+        WHERE u.email = auth.jwt() ->> 'email'
+          AND u.role_id IN (SELECT id FROM roles WHERE nombre = 'Administrador')
+      )
+    )
   );
 
 -- 7. Políticas para tabla GASTOS
 CREATE POLICY gastos_admin_select ON gastos FOR SELECT TO authenticated
   USING (
-    EXISTS (SELECT 1 FROM usuarios u WHERE u.id = auth.uid() AND u.role_id IN (SELECT id FROM roles WHERE nombre = 'Administrador'))
+    EXISTS (
+      SELECT 1
+      FROM usuarios u
+      WHERE u.email = auth.jwt() ->> 'email'
+        AND u.role_id IN (SELECT id FROM roles WHERE nombre = 'Administrador')
+    )
   );
 
 CREATE POLICY gastos_vendedor_select ON gastos FOR SELECT TO authenticated
   USING (
-    usuario_id = auth.uid() AND
-    EXISTS (SELECT 1 FROM usuarios u WHERE u.id = auth.uid() AND u.role_id IN (SELECT id FROM roles WHERE nombre = 'Vendedor'))
+    usuario_id IN (
+      SELECT id
+      FROM usuarios
+      WHERE email = auth.jwt() ->> 'email'
+    )
+    AND EXISTS (
+      SELECT 1
+      FROM usuarios u
+      WHERE u.email = auth.jwt() ->> 'email'
+        AND u.role_id IN (SELECT id FROM roles WHERE nombre = 'Vendedor')
+    )
   );
 
 -- 8. Políticas para tabla AUDITORIA
 -- Solo administrador puede ver auditoría completa
 CREATE POLICY auditoria_admin_select ON auditoria FOR SELECT TO authenticated
   USING (
-    EXISTS (SELECT 1 FROM usuarios u WHERE u.id = auth.uid() AND u.role_id IN (SELECT id FROM roles WHERE nombre = 'Administrador'))
+    EXISTS (
+      SELECT 1
+      FROM usuarios u
+      WHERE u.email = auth.jwt() ->> 'email'
+        AND u.role_id IN (SELECT id FROM roles WHERE nombre = 'Administrador')
+    )
   );
 
 -- Usuarios pueden ver auditoría sobre sus propias operaciones
 CREATE POLICY auditoria_self_select ON auditoria FOR SELECT TO authenticated
   USING (
-    usuario_id = auth.uid()
+    usuario_id IN (
+      SELECT id
+      FROM usuarios
+      WHERE email = auth.jwt() ->> 'email'
+    )
   );
 
 -- 9. Política para tabla METODOS_PAGO

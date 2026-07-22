@@ -55,15 +55,71 @@ export function AuthProvider({ children }){
         return
       }
 
-      // Fetch profile from usuarios table to get role
-      const email = session.user.email
-      let profile = null
-      try{
-        const { data: u } = await supabase.from('usuarios').select('id, nombre, role_id, activo').eq('email', email).maybeSingle()
-        profile = u ?? null
-      }catch(e){
-        profile = null
+      // Helper function to fetch profile and role
+      const getProfileAndRole = async (sessionUser) => {
+        let profile = null
+        let authError = null
+
+        try {
+          // 1. Try matching by UUID
+          const { data: uById, error: errId } = await supabase
+            .from('usuarios')
+            .select('id, nombre, role_id, activo')
+            .eq('id', sessionUser.id)
+            .maybeSingle()
+
+          if (errId) {
+            console.warn('[Auth] Error querying usuarios by ID:', errId.message)
+            authError = errId.message
+          }
+
+          if (uById) {
+            profile = uById
+          } else if (sessionUser.email) {
+            // 2. Fallback to case-insensitive email
+            const { data: uByEmail, error: errEmail } = await supabase
+              .from('usuarios')
+              .select('id, nombre, role_id, activo')
+              .ilike('email', sessionUser.email)
+              .maybeSingle()
+
+            if (errEmail) {
+              console.warn('[Auth] Error querying usuarios by email:', errEmail.message)
+              authError = authError ? `${authError} | ${errEmail.message}` : errEmail.message
+            }
+            profile = uByEmail ?? null
+          }
+        } catch (e) {
+          console.error('[Auth] Exception fetching profile:', e)
+          authError = String(e?.message || e)
+          profile = null
+        }
+
+        let role = null
+        if (profile?.role_id) {
+          try {
+            const { data: r, error: errRole } = await supabase
+              .from('roles')
+              .select('nombre')
+              .eq('id', profile.role_id)
+              .maybeSingle()
+
+            if (errRole) {
+              console.warn('[Auth] Error querying roles:', errRole.message)
+              authError = authError ? `${authError} | Role Error: ${errRole.message}` : errRole.message
+            }
+            role = r?.nombre ?? null
+          } catch (e) {
+            console.error('[Auth] Exception fetching role:', e)
+            role = null
+          }
+        }
+
+        return { profile, role, authError }
       }
+
+      const { profile, role, authError } = await getProfileAndRole(session.user)
+      if (!mounted) return
 
       // Check if user account is deactivated
       if (profile && profile.activo === false) {
@@ -75,15 +131,7 @@ export function AuthProvider({ children }){
         return
       }
 
-      let role = null
-      if(profile?.role_id){
-        try{
-          const { data: r } = await supabase.from('roles').select('nombre').eq('id', profile.role_id).maybeSingle()
-          role = r?.nombre ?? null
-        }catch(e){ role = null }
-      }
-
-      setUser({ sessionUser: session.user, profile, role })
+      setUser({ sessionUser: session.user, profile, role, authError })
     }
 
     load()
@@ -105,11 +153,40 @@ export function AuthProvider({ children }){
         localStorage.setItem('login_time', Date.now().toString())
       }
 
-      const email = session.user.email
-      const { data: u } = await supabase.from('usuarios').select('id, nombre, role_id, activo').eq('email', email).maybeSingle()
+      let profile = null
+      let role = null
+      try {
+        const { data: uById } = await supabase
+          .from('usuarios')
+          .select('id, nombre, role_id, activo')
+          .eq('id', session.user.id)
+          .maybeSingle()
+
+        if (uById) {
+          profile = uById
+        } else if (session.user.email) {
+          const { data: uByEmail } = await supabase
+            .from('usuarios')
+            .select('id, nombre, role_id, activo')
+            .ilike('email', session.user.email)
+            .maybeSingle()
+          profile = uByEmail ?? null
+        }
+
+        if (profile?.role_id) {
+          const { data: r } = await supabase
+            .from('roles')
+            .select('nombre')
+            .eq('id', profile.role_id)
+            .maybeSingle()
+          role = r?.nombre ?? null
+        }
+      } catch (e) {
+        console.error('[Auth] Error in onAuthStateChange profile fetch:', e)
+      }
       
       // Check if user is active
-      if (u && u.activo === false) {
+      if (profile && profile.activo === false) {
         localStorage.removeItem('login_time')
         await supabase.auth.signOut()
         setUser(null)
@@ -118,12 +195,7 @@ export function AuthProvider({ children }){
         return
       }
 
-      let role = null
-      if(u?.role_id){
-        const { data: r } = await supabase.from('roles').select('nombre').eq('id', u.role_id).maybeSingle()
-        role = r?.nombre ?? null
-      }
-      setUser({ sessionUser: session.user, profile: u ?? null, role })
+      setUser({ sessionUser: session.user, profile, role })
     })
 
     // Check expiry every minute in case the app is left open
