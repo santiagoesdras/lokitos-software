@@ -1,8 +1,4 @@
-import { serve } from 'std/server'
 import { createClient } from '@supabase/supabase-js'
-
-const SUPABASE_URL = Deno.env.get('SUPABASE_URL')
-const SUPABASE_SERVICE_ROLE = Deno.env.get('SUPABASE_SERVICE_ROLE')
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -10,9 +6,12 @@ const corsHeaders = {
   'Access-Control-Allow-Methods': 'POST, GET, OPTIONS, PUT, DELETE',
 }
 
-const sb = createClient(SUPABASE_URL as string, SUPABASE_SERVICE_ROLE as string)
+const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? ''
+const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? Deno.env.get('SUPABASE_SERVICE_ROLE') ?? ''
 
-serve(async (req) => {
+const sb = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
+
+Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
   }
@@ -23,11 +22,9 @@ serve(async (req) => {
       return new Response(JSON.stringify({ error: 'Missing Authorization header' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
     }
 
-    // Verify caller authentication and authorization
-    const callerClient = createClient(SUPABASE_URL as string, req.headers.get('apikey') || '', {
-      global: { headers: { Authorization: authHeader } }
-    })
-    const { data: { user: callerUser }, error: authErr } = await callerClient.auth.getUser()
+    // Verify caller authentication using JWT
+    const token = authHeader.replace('Bearer ', '')
+    const { data: { user: callerUser }, error: authErr } = await sb.auth.getUser(token)
     if (authErr || !callerUser) {
       return new Response(JSON.stringify({ error: 'Unauthorized: Invalid token' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
     }
@@ -54,7 +51,14 @@ serve(async (req) => {
     }
 
     // Parse requested action
-    const body = await req.json()
+    let body: any = {}
+    try {
+      const raw = await req.json()
+      body = typeof raw === 'string' ? JSON.parse(raw) : (raw || {})
+    } catch {
+      body = {}
+    }
+
     const { action, email, password, nombre, role_id, activo, userId } = body
 
     if (action === 'create') {
@@ -127,8 +131,7 @@ serve(async (req) => {
 
       if (updateErr) throw updateErr
 
-      // If account deactivated, ban the user from Supabase Auth so they can't log in anymore
-      // Ban duration: 87600h = 10 years
+      // If account deactivated, ban user
       const ban_duration = activo === false ? '87600h' : 'none'
       await sb.auth.admin.updateUserById(userId, { ban_duration })
 

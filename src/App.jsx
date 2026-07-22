@@ -1,5 +1,5 @@
 import React from 'react'
-import { Routes, Route, Link, useNavigate } from 'react-router-dom'
+import { Routes, Route, Link, useNavigate, Navigate } from 'react-router-dom'
 import Ventas from './pages/Ventas'
 import Admin from './pages/Admin'
 import ProductsPage from './pages/Products'
@@ -16,17 +16,28 @@ import { hasSupabaseConfig } from './lib/supabase'
 function Header(){
   const { user, signOut } = useAuth()
   const navigate = useNavigate()
+
   const handleLogout = async ()=>{
     await signOut()
     navigate('/login')
   }
+
+  const normalize = (str) => String(str || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim()
+  const userRole = user?.role ?? user?.profile?.role ?? user?.roleName ?? user?.role_name
+  const isAdmin = userRole ? normalize(userRole) === 'administrador' : false
+
   return (
     <header className="header">
       <h1>Lokitos POS</h1>
       <nav>
-        <Link to="/">Ventas</Link>
-        <Link to="/admin">Admin</Link>
-        {user ? <button onClick={handleLogout} style={{marginLeft:12}}>Salir</button> : <Link to="/login" style={{marginLeft:12}}>Entrar</Link>}
+        {user ? (
+          <>
+            <Link to="/">Ventas</Link>
+            <Link to="/gastos">Gastos</Link>
+            {isAdmin && <Link to="/admin">Admin</Link>}
+            <button onClick={handleLogout} style={{ marginLeft: 12 }}>Salir</button>
+          </>
+        ) : null}
       </nav>
     </header>
   )
@@ -64,13 +75,14 @@ export default function App() {
           <Routes>
             <Route path="/login" element={<Login />} />
             <Route path="/" element={<ProtectedRoute><Ventas /></ProtectedRoute>} />
-            <Route path="/admin" element={<ProtectedRoute><Admin /></ProtectedRoute>} />
-            <Route path="/admin/products" element={<ProductsPage />} />
-            <Route path="/admin/categories" element={<AdminCategories />} />
-            <Route path="/admin/users" element={<AdminUsers />} />
-            <Route path="/admin/dashboard" element={<Dashboard />} />
-            <Route path="/admin/reportes" element={<Reportes />} />
-            <Route path="/gastos" element={<GastosPage />} />
+            <Route path="/gastos" element={<ProtectedRoute><GastosPage /></ProtectedRoute>} />
+            <Route path="/admin" element={<ProtectedRoute allowedRoles={['Administrador']}><Admin /></ProtectedRoute>} />
+            <Route path="/admin/products" element={<ProtectedRoute allowedRoles={['Administrador']}><ProductsPage /></ProtectedRoute>} />
+            <Route path="/admin/categories" element={<ProtectedRoute allowedRoles={['Administrador']}><AdminCategories /></ProtectedRoute>} />
+            <Route path="/admin/users" element={<ProtectedRoute allowedRoles={['Administrador']}><AdminUsers /></ProtectedRoute>} />
+            <Route path="/admin/dashboard" element={<ProtectedRoute allowedRoles={['Administrador']}><Dashboard /></ProtectedRoute>} />
+            <Route path="/admin/reportes" element={<ProtectedRoute allowedRoles={['Administrador']}><Reportes /></ProtectedRoute>} />
+            <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </main>
       </div>
