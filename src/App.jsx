@@ -3,6 +3,8 @@ import { Routes, Route, Link, useNavigate } from 'react-router-dom'
 import Ventas from './pages/Ventas'
 import Admin from './pages/Admin'
 import ProductsPage from './pages/Products'
+import AdminCategories from './pages/AdminCategories'
+import AdminUsers from './pages/AdminUsers'
 import GastosPage from './pages/Gastos'
 import Reportes from './pages/Reportes'
 import Dashboard from './pages/Dashboard'
@@ -64,6 +66,8 @@ export default function App() {
             <Route path="/" element={<ProtectedRoute><Ventas /></ProtectedRoute>} />
             <Route path="/admin" element={<ProtectedRoute><Admin /></ProtectedRoute>} />
             <Route path="/admin/products" element={<ProductsPage />} />
+            <Route path="/admin/categories" element={<AdminCategories />} />
+            <Route path="/admin/users" element={<AdminUsers />} />
             <Route path="/admin/dashboard" element={<Dashboard />} />
             <Route path="/admin/reportes" element={<Reportes />} />
             <Route path="/gastos" element={<GastosPage />} />
