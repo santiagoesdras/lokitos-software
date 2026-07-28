@@ -1,20 +1,35 @@
-import React, { useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import ProductList from '../components/ProductList'
 import ProductForm from '../components/ProductForm'
 import ProtectedRoute from '../components/ProtectedRoute'
 
-export default function ProductsPage(){
+export default function ProductsPage() {
   const [editing, setEditing] = useState(null)
   const [refreshKey, setRefreshKey] = useState(0)
+  const formRef = useRef(null)
 
   const handleEdit = (product) => setEditing(product)
-  const handleSaved = ()=>{ setEditing(null); setRefreshKey(k=>k+1) }
+  const handleSaved = () => {
+    setEditing(null)
+    setRefreshKey((currentKey) => currentKey + 1)
+  }
+
+  useEffect(() => {
+    if (!editing || !formRef.current) return
+
+    formRef.current.scrollIntoView({
+      behavior: 'smooth',
+      block: 'start'
+    })
+  }, [editing])
 
   return (
-    <ProtectedRoute allowedRoles={["Administrador"]}>
+    <ProtectedRoute allowedRoles={['Administrador']}>
       <div>
-        <h2>Catálogo de productos</h2>
-        <ProductForm key={editing?.id ?? 'new'} product={editing} onSaved={handleSaved} />
+        <h2>Catalogo de productos</h2>
+        <div ref={formRef}>
+          <ProductForm key={editing?.id ?? 'new'} product={editing} onSaved={handleSaved} />
+        </div>
         <ProductList key={refreshKey} onEdit={handleEdit} />
       </div>
     </ProtectedRoute>
