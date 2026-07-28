@@ -1,6 +1,7 @@
 import React, { useState } from 'react'
 import ProtectedRoute from '../components/ProtectedRoute'
 import { supabase } from '../lib/supabase'
+import { formatCurrency } from '../lib/currency'
 
 export default function Reportes() {
   const [from, setFrom] = useState('')
@@ -145,7 +146,7 @@ export default function Reportes() {
             <div className="kpi-grid">
               <div className="kpi-card" style={{ borderLeft: '4px solid var(--accent)' }}>
                 <span style={{ color: 'var(--text-muted)', fontSize: 14, fontWeight: 600 }}>Total Vendido</span>
-                <span className="kpi-value">${report.totalVendido?.toFixed(2) ?? '0.00'}</span>
+                <span className="kpi-value">{formatCurrency(report.totalVendido)}</span>
                 <span style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>
                   {report.cantidadVentas} transacciones en total
                 </span>
@@ -153,7 +154,7 @@ export default function Reportes() {
 
               <div className="kpi-card" style={{ borderLeft: '4px solid var(--danger)' }}>
                 <span style={{ color: 'var(--text-muted)', fontSize: 14, fontWeight: 600 }}>Total de Gastos</span>
-                <span className="kpi-value">${report.totalGastos?.toFixed(2) ?? '0.00'}</span>
+                <span className="kpi-value">{formatCurrency(report.totalGastos)}</span>
                 <span style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>
                   Egresos registrados en el periodo
                 </span>
@@ -162,7 +163,7 @@ export default function Reportes() {
               <div className="kpi-card" style={{ borderLeft: '4px solid var(--success)' }}>
                 <span style={{ color: 'var(--text-muted)', fontSize: 14, fontWeight: 600 }}>Utilidad Estimada</span>
                 <span className="kpi-value" style={{ color: report.utilidadEstim >= 0 ? 'var(--success)' : 'var(--danger)' }}>
-                  ${report.utilidadEstim?.toFixed(2) ?? '0.00'}
+                  {formatCurrency(report.utilidadEstim)}
                 </span>
                 <span style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>
                   Ventas menos gastos

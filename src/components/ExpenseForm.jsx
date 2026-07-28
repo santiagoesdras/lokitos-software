@@ -1,6 +1,7 @@
 import React, { useState } from 'react'
 import { useAuth } from './AuthProvider'
 import { supabase } from '../lib/supabase'
+import { formatCurrencyLabel } from '../lib/currency'
 
 export default function ExpenseForm({ onSaved }) {
   const { user } = useAuth()
@@ -65,7 +66,7 @@ export default function ExpenseForm({ onSaved }) {
         </div>
         
         <div>
-          <label>Monto ($)</label>
+          <label>{formatCurrencyLabel('Monto')}</label>
           <input
             type="number"
             step="0.01"

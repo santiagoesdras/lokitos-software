@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
+import { formatCurrency } from '../lib/currency'
 
 function buildDeactivateProductErrorMessage(err) {
   const fallback = 'Error al desactivar el producto.'
@@ -149,7 +150,7 @@ export default function ProductList({ onEdit }) {
                   </span>
                 </td>
                 <td style={{ fontWeight: 700, color: 'var(--accent)' }}>
-                  ${product.precio?.toFixed(2)}
+                  {formatCurrency(product.precio)}
                 </td>
                 <td style={{ color: 'var(--text-muted)', fontSize: 13, maxWidth: 300, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   {product.descripcion || 'Sin descripción'}

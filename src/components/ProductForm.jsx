@@ -1,6 +1,21 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { v4 as uuidv4 } from 'uuid'
+import { formatCurrencyLabel } from '../lib/currency'
+
+function buildTaggedError(step, error, fallbackMessage, extra = {}) {
+  const taggedError = new Error(error?.message || fallbackMessage)
+
+  taggedError.step = step
+  taggedError.details = error?.details
+  taggedError.hint = error?.hint
+  taggedError.code = error?.code
+  taggedError.statusCode = error?.statusCode
+
+  Object.assign(taggedError, extra)
+
+  return taggedError
+}
 
 function buildProductSaveErrorMessage(err, isEditing) {
   const fallback = isEditing ? 'Error al actualizar el producto.' : 'Error al guardar producto.'
@@ -13,9 +28,16 @@ function buildProductSaveErrorMessage(err, isEditing) {
   if (err.details && err.details !== err.message) parts.push(err.details)
   if (err.hint) parts.push(`Sugerencia: ${err.hint}`)
   if (err.code) parts.push(`Codigo: ${err.code}`)
+  if (err.statusCode) parts.push(`HTTP: ${err.statusCode}`)
 
   const normalizedMessage = `${err.message || ''} ${err.details || ''}`.toLowerCase()
-  if (normalizedMessage.includes('table "productos"') || normalizedMessage.includes("table 'productos'")) {
+  if (err.step === 'storage-upload') {
+    parts.push('Posible causa: falta una policy de INSERT o SELECT en storage.objects para el bucket "product-images". Supabase Storage necesita poder insertar y devolver el objeto recien creado.')
+  } else if (
+    err.step === 'product-save' ||
+    normalizedMessage.includes('table "productos"') ||
+    normalizedMessage.includes("table 'productos'")
+  ) {
     parts.push('Posible causa: tu sesion no esta cumpliendo la politica RLS de productos para acciones de administrador.')
   } else if (
     normalizedMessage.includes('auditoria') ||
@@ -111,8 +133,15 @@ export default function ProductForm({ product, onSaved }) {
           })
 
         if (uploadError) {
-          throw new Error(
-            uploadError.message || 'No se pudo subir la imagen. Verifica el bucket "product-images" y sus politicas.'
+          console.error('Storage upload error:', uploadError)
+          throw buildTaggedError(
+            'storage-upload',
+            uploadError,
+            'No se pudo subir la imagen. Verifica el bucket "product-images" y sus politicas.',
+            {
+              bucket: 'product-images',
+              filename
+            }
           )
         }
 
@@ -136,7 +165,12 @@ export default function ProductForm({ product, onSaved }) {
           .eq('id', product.id)
           .eq('activo', true)
 
-        if (error) throw error
+        if (error) {
+          throw buildTaggedError('product-save', error, 'No se pudo actualizar el producto.', {
+            table: 'productos',
+            operation: 'update'
+          })
+        }
         if (count === 0) {
           throw new Error('No se actualizo ningun producto. Puede que ya este inactivo o que tu usuario no tenga permisos para editarlo.')
         }
@@ -151,7 +185,12 @@ export default function ProductForm({ product, onSaved }) {
             imagen_path: imagenPath
           })
 
-        if (error) throw error
+        if (error) {
+          throw buildTaggedError('product-save', error, 'No se pudo crear el producto.', {
+            table: 'productos',
+            operation: 'insert'
+          })
+        }
       }
 
       alert(product ? 'Producto actualizado exitosamente' : 'Producto guardado exitosamente')
@@ -202,7 +241,7 @@ export default function ProductForm({ product, onSaved }) {
         </div>
 
         <div>
-          <label>Precio ($)</label>
+          <label>{formatCurrencyLabel('Precio')}</label>
           <input
             type="number"
             step="0.01"

@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../components/AuthProvider'
+import { formatCurrency } from '../lib/currency'
 
 export default function Ventas() {
   const { user } = useAuth()
@@ -217,7 +218,7 @@ export default function Ventas() {
                         <div className="product-desc">{p.descripcion || 'Sin descripción'}</div>
                       </div>
                       <div className="flex justify-between align-center mt-4">
-                        <span className="product-price">${p.precio?.toFixed(2)}</span>
+                        <span className="product-price">{formatCurrency(p.precio)}</span>
                         <button
                           onClick={() => addToCart(p)}
                           className="btn btn-primary"
@@ -251,7 +252,7 @@ export default function Ventas() {
                   <div className="cart-item-details">
                     <div className="cart-item-name">{item.nombre}</div>
                     <div className="cart-item-price">
-                      ${item.precio_unitario?.toFixed(2)} x {item.cantidad}
+                      {formatCurrency(item.precio_unitario)} x {item.cantidad}
                     </div>
                   </div>
                   <div className="cart-item-actions">
@@ -306,7 +307,7 @@ export default function Ventas() {
             <div className="flex justify-between align-center mb-4">
               <span style={{ fontSize: 16, fontWeight: 600 }}>Total a Cobrar:</span>
               <span style={{ fontSize: 24, fontWeight: 800, color: 'var(--accent)' }}>
-                ${total.toFixed(2)}
+                {formatCurrency(total)}
               </span>
             </div>
 
@@ -363,14 +364,14 @@ export default function Ventas() {
                     <div>
                       {i.nombre} x {i.cantidad}
                     </div>
-                    <div>${(i.precio_unitario * i.cantidad).toFixed(2)}</div>
+                    <div>{formatCurrency(i.precio_unitario * i.cantidad)}</div>
                   </div>
                 ))}
               </div>
 
               <div className="flex justify-between" style={{ fontWeight: 'bold', fontSize: 14 }}>
                 <div>TOTAL:</div>
-                <div>${lastSaleReceipt.total.toFixed(2)}</div>
+                <div>{formatCurrency(lastSaleReceipt.total)}</div>
               </div>
             </div>
 

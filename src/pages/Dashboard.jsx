@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import ProtectedRoute from '../components/ProtectedRoute'
 import { supabase } from '../lib/supabase'
+import { formatCurrency } from '../lib/currency'
 
 export default function Dashboard() {
   const [kpis, setKpis] = useState(null)
@@ -54,7 +55,7 @@ export default function Dashboard() {
             <div className="kpi-grid">
               <div className="kpi-card" style={{ borderLeft: '4px solid var(--accent)' }}>
                 <span style={{ color: 'var(--text-muted)', fontSize: 14, fontWeight: 600 }}>Ventas del Día</span>
-                <span className="kpi-value">${kpis.totalVendido?.toFixed(2) ?? '0.00'}</span>
+                <span className="kpi-value">{formatCurrency(kpis.totalVendido)}</span>
                 <span style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>
                   {kpis.cantidadVentas} transacciones concretadas
                 </span>
@@ -62,7 +63,7 @@ export default function Dashboard() {
 
               <div className="kpi-card" style={{ borderLeft: '4px solid var(--danger)' }}>
                 <span style={{ color: 'var(--text-muted)', fontSize: 14, fontWeight: 600 }}>Gastos del Día</span>
-                <span className="kpi-value">${kpis.totalGastos?.toFixed(2) ?? '0.00'}</span>
+                <span className="kpi-value">{formatCurrency(kpis.totalGastos)}</span>
                 <span style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>
                   Egresos registrados hoy
                 </span>
@@ -71,7 +72,7 @@ export default function Dashboard() {
               <div className="kpi-card" style={{ borderLeft: '4px solid var(--success)' }}>
                 <span style={{ color: 'var(--text-muted)', fontSize: 14, fontWeight: 600 }}>Utilidad Estimada</span>
                 <span className={`kpi-value ${kpis.utilidadEstim >= 0 ? '' : 'text-danger'}`} style={{ color: kpis.utilidadEstim >= 0 ? 'var(--success)' : 'var(--danger)' }}>
-                  ${kpis.utilidadEstim?.toFixed(2) ?? '0.00'}
+                  {formatCurrency(kpis.utilidadEstim)}
                 </span>
                 <span style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>
                   Ventas menos gastos

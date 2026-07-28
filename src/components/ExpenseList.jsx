@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
+import { formatCurrency } from '../lib/currency'
 
 export default function ExpenseList() {
   const [items, setItems] = useState([])
@@ -59,7 +60,7 @@ export default function ExpenseList() {
               <tr key={g.id}>
                 <td style={{ fontWeight: 600 }}>{g.titulo}</td>
                 <td style={{ fontWeight: 700, color: 'var(--danger)' }}>
-                  -${parseFloat(g.monto).toFixed(2)}
+                  {formatCurrency(-parseFloat(g.monto))}
                 </td>
                 <td>
                   <span className="badge" style={{ background: '#f1f5f9', color: 'var(--primary)' }}>
