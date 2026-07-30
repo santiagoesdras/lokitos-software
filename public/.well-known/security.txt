@@ -1,0 +1,5 @@
+Contact: mailto:edsantiago@url.edu.gt
+Expires: 2027-07-29T00:00:00.000Z
+Canonical: https://lokitos.tulab.dev/.well-known/security.txt
+Policy: https://lokitos.tulab.dev/security-policy.txt
+Preferred-Languages: es, en

@@ -1,14 +1,33 @@
 import React, { useEffect, useState } from 'react'
+import { FunctionsHttpError } from '@supabase/supabase-js'
 import { supabase } from '../lib/supabase'
 import ProtectedRoute from '../components/ProtectedRoute'
+
+async function getFunctionErrorMessage(error, fallbackMessage) {
+  if (error instanceof FunctionsHttpError) {
+    try {
+      const payload = await error.context.json()
+      const parts = []
+
+      if (payload?.error) parts.push(payload.error)
+      if (payload?.details) parts.push(payload.details)
+      if (payload?.hint) parts.push(`Sugerencia: ${payload.hint}`)
+
+      return parts.length > 0 ? parts.join('\n') : fallbackMessage
+    } catch (parseError) {
+      console.error('No se pudo leer el cuerpo del error de la Edge Function:', parseError)
+    }
+  }
+
+  return error?.message || fallbackMessage
+}
 
 export default function AdminUsers() {
   const [users, setUsers] = useState([])
   const [roles, setRoles] = useState([])
   const [loading, setLoading] = useState(true)
   const [editingUser, setEditingUser] = useState(null)
-  
-  // Form states
+
   const [nombre, setNombre] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -17,7 +36,6 @@ export default function AdminUsers() {
   const [isNew, setIsNew] = useState(false)
   const [showPasswordModal, setShowPasswordModal] = useState(false)
   const [newPassword, setNewPassword] = useState('')
-  
   const [saving, setSaving] = useState(false)
 
   useEffect(() => {
@@ -27,7 +45,7 @@ export default function AdminUsers() {
   async function loadData() {
     setLoading(true)
     try {
-      const { data: usersData, error: uErr } = await supabase
+      const { data: usersData, error: usersError } = await supabase
         .from('usuarios')
         .select(`
           id,
@@ -41,18 +59,18 @@ export default function AdminUsers() {
           )
         `)
         .order('nombre')
-      
-      const { data: rolesData, error: rErr } = await supabase
+
+      const { data: rolesData, error: rolesError } = await supabase
         .from('roles')
         .select('*')
 
-      if (uErr) throw uErr
-      if (rErr) throw rErr
+      if (usersError) throw usersError
+      if (rolesError) throw rolesError
 
       setUsers(usersData || [])
       setRoles(rolesData || [])
-    } catch (err) {
-      console.error('Error loading users:', err)
+    } catch (error) {
+      console.error('Error loading users:', error)
       alert('Error al cargar datos de usuarios')
     } finally {
       setLoading(false)
@@ -83,13 +101,13 @@ export default function AdminUsers() {
     setIsNew(false)
   }
 
-  const handleSubmit = async (e) => {
-    e.preventDefault()
+  const handleSubmit = async (event) => {
+    event.preventDefault()
     setSaving(true)
+
     try {
       if (isNew) {
-        // Call edge function to create user
-        const res = await supabase.functions.invoke('manage-users', {
+        const response = await supabase.functions.invoke('manage-users', {
           body: {
             action: 'create',
             email,
@@ -98,12 +116,10 @@ export default function AdminUsers() {
             role_id: roleId
           }
         })
-        if (res.error) {
-          throw new Error(res.error.message || res.error)
-        }
+
+        if (response.error) throw response.error
       } else {
-        // Call edge function to update user
-        const res = await supabase.functions.invoke('manage-users', {
+        const response = await supabase.functions.invoke('manage-users', {
           body: {
             action: 'update',
             userId: editingUser.id,
@@ -112,43 +128,44 @@ export default function AdminUsers() {
             activo
           }
         })
-        if (res.error) {
-          throw new Error(res.error.message || res.error)
-        }
+
+        if (response.error) throw response.error
       }
-      alert('Usuario guardado con éxito')
+
+      alert('Usuario guardado con exito')
       setEditingUser(null)
       setIsNew(false)
       loadData()
-    } catch (err) {
-      console.error(err)
-      alert(err.message || 'Error al guardar usuario')
+    } catch (error) {
+      console.error('Error saving user:', error)
+      alert(await getFunctionErrorMessage(error, 'Error al guardar usuario'))
     } finally {
       setSaving(false)
     }
   }
 
-  const handleResetPasswordSubmit = async (e) => {
-    e.preventDefault()
-    if (!newPassword) return alert('Ingresa una contraseña')
+  const handleResetPasswordSubmit = async (event) => {
+    event.preventDefault()
+    if (!newPassword) return alert('Ingresa una contrasena')
+
     setSaving(true)
     try {
-      const res = await supabase.functions.invoke('manage-users', {
+      const response = await supabase.functions.invoke('manage-users', {
         body: {
           action: 'reset-password',
           userId: editingUser.id,
           password: newPassword
         }
       })
-      if (res.error) {
-        throw new Error(res.error.message || res.error)
-      }
-      alert('Contraseña actualizada con éxito')
+
+      if (response.error) throw response.error
+
+      alert('Contrasena actualizada con exito')
       setShowPasswordModal(false)
       setNewPassword('')
-    } catch (err) {
-      console.error(err)
-      alert(err.message || 'Error al actualizar contraseña')
+    } catch (error) {
+      console.error('Error resetting password:', error)
+      alert(await getFunctionErrorMessage(error, 'Error al actualizar contrasena'))
     } finally {
       setSaving(false)
     }
@@ -158,12 +175,12 @@ export default function AdminUsers() {
     <ProtectedRoute allowedRoles={['Administrador']}>
       <div>
         <div className="flex justify-between align-center mb-4">
-          <h2>Administración de Usuarios</h2>
-          {!editingUser && (
+          <h2>Administracion de Usuarios</h2>
+          {!editingUser ? (
             <button className="btn btn-primary" onClick={handleCreateNew}>
               + Nuevo Usuario
             </button>
-          )}
+          ) : null}
         </div>
 
         {editingUser ? (
@@ -175,63 +192,63 @@ export default function AdminUsers() {
                 <input
                   type="text"
                   value={nombre}
-                  onChange={(e) => setNombre(e.target.value)}
+                  onChange={(event) => setNombre(event.target.value)}
                   required
                 />
               </div>
 
               <div style={{ marginBottom: 12 }}>
-                <label>Correo Electrónico</label>
+                <label>Correo Electronico</label>
                 <input
                   type="email"
                   value={email}
-                  onChange={(e) => setEmail(e.target.value)}
+                  onChange={(event) => setEmail(event.target.value)}
                   disabled={!isNew}
                   required
                 />
               </div>
 
-              {isNew && (
+              {isNew ? (
                 <div style={{ marginBottom: 12 }}>
-                  <label>Contraseña Inicial</label>
+                  <label>Contrasena Inicial</label>
                   <input
                     type="password"
                     value={password}
-                    onChange={(e) => setPassword(e.target.value)}
+                    onChange={(event) => setPassword(event.target.value)}
                     required
                   />
                 </div>
-              )}
+              ) : null}
 
               <div style={{ marginBottom: 12 }}>
                 <label>Rol</label>
-                <select value={roleId} onChange={(e) => setRoleId(e.target.value)} required>
+                <select value={roleId} onChange={(event) => setRoleId(event.target.value)} required>
                   <option value="">-- Seleccionar Rol --</option>
-                  {roles.map((r) => (
-                    <option key={r.id} value={r.id}>
-                      {r.nombre}
+                  {roles.map((role) => (
+                    <option key={role.id} value={role.id}>
+                      {role.nombre}
                     </option>
                   ))}
                 </select>
               </div>
 
-              {!isNew && (
+              {!isNew ? (
                 <div style={{ marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
                   <input
                     type="checkbox"
                     checked={activo}
-                    onChange={(e) => setActivo(e.target.checked)}
+                    onChange={(event) => setActivo(event.target.checked)}
                     style={{ width: 'auto' }}
                     id="user-activo"
                   />
                   <label htmlFor="user-activo" style={{ margin: 0, cursor: 'pointer' }}>
-                    Usuario Activo (Permite iniciar sesión)
+                    Usuario Activo (Permite iniciar sesion)
                   </label>
                 </div>
-              )}
+              ) : null}
 
               <div className="form-actions">
-                {!isNew && (
+                {!isNew ? (
                   <button
                     type="button"
                     className="btn btn-secondary"
@@ -241,9 +258,9 @@ export default function AdminUsers() {
                     }}
                     style={{ marginRight: 'auto' }}
                   >
-                    Restablecer Contraseña
+                    Restablecer Contrasena
                   </button>
-                )}
+                ) : null}
                 <button type="button" className="btn btn-secondary" onClick={handleCancel} disabled={saving}>
                   Cancelar
                 </button>
@@ -272,19 +289,23 @@ export default function AdminUsers() {
                   </tr>
                 </thead>
                 <tbody>
-                  {users.map((u) => (
-                    <tr key={u.id}>
-                      <td style={{ fontWeight: 600 }}>{u.nombre}</td>
-                      <td>{u.email}</td>
-                      <td>{u.roles?.nombre || 'N/A'}</td>
+                  {users.map((user) => (
+                    <tr key={user.id}>
+                      <td style={{ fontWeight: 600 }}>{user.nombre}</td>
+                      <td>{user.email}</td>
+                      <td>{user.roles?.nombre || 'N/A'}</td>
                       <td>
-                        <span className={`badge ${u.activo ? 'badge-success' : 'badge-danger'}`}>
-                          {u.activo ? 'Activo' : 'Inactivo'}
+                        <span className={`badge ${user.activo ? 'badge-success' : 'badge-danger'}`}>
+                          {user.activo ? 'Activo' : 'Inactivo'}
                         </span>
                       </td>
-                      <td>{new Date(u.creado_en).toLocaleDateString()}</td>
+                      <td>{new Date(user.creado_en).toLocaleDateString()}</td>
                       <td>
-                        <button className="btn btn-secondary" style={{ padding: '4px 8px', fontSize: 13 }} onClick={() => handleEdit(u)}>
+                        <button
+                          className="btn btn-secondary"
+                          style={{ padding: '4px 8px', fontSize: 13 }}
+                          onClick={() => handleEdit(user)}
+                        >
                           Editar
                         </button>
                       </td>
@@ -296,20 +317,20 @@ export default function AdminUsers() {
           </div>
         )}
 
-        {showPasswordModal && (
+        {showPasswordModal ? (
           <div className="modal-overlay">
             <div className="modal-content">
-              <h3>Restablecer Contraseña</h3>
+              <h3>Restablecer Contrasena</h3>
               <p style={{ fontSize: 14, color: 'var(--text-muted)', marginBottom: 16 }}>
-                Establece una nueva contraseña para el usuario <strong>{editingUser?.nombre}</strong>.
+                Establece una nueva contrasena para el usuario <strong>{editingUser?.nombre}</strong>.
               </p>
               <form onSubmit={handleResetPasswordSubmit}>
                 <div style={{ marginBottom: 16 }}>
-                  <label>Nueva Contraseña</label>
+                  <label>Nueva Contrasena</label>
                   <input
                     type="password"
                     value={newPassword}
-                    onChange={(e) => setNewPassword(e.target.value)}
+                    onChange={(event) => setNewPassword(event.target.value)}
                     placeholder="Min. 6 caracteres"
                     required
                   />
@@ -319,13 +340,13 @@ export default function AdminUsers() {
                     Cancelar
                   </button>
                   <button type="submit" className="btn btn-primary" disabled={saving}>
-                    {saving ? 'Guardando...' : 'Actualizar Contraseña'}
+                    {saving ? 'Guardando...' : 'Actualizar Contrasena'}
                   </button>
                 </div>
               </form>
             </div>
           </div>
-        )}
+        ) : null}
       </div>
     </ProtectedRoute>
   )

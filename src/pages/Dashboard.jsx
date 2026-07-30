@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react'
 import ProtectedRoute from '../components/ProtectedRoute'
 import { supabase } from '../lib/supabase'
 import { formatCurrency } from '../lib/currency'
+import { getFunctionErrorMessage } from '../lib/functionErrors'
 
 export default function Dashboard() {
   const [kpis, setKpis] = useState(null)
@@ -32,6 +33,7 @@ export default function Dashboard() {
       setKpis(res.data || null)
     } catch (err) {
       console.error('Error loading dashboard:', err)
+      alert(await getFunctionErrorMessage(err, 'Error al cargar el dashboard'))
     } finally {
       setLoading(false)
     }

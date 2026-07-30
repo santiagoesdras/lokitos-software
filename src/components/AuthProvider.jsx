@@ -2,33 +2,107 @@ import React, { createContext, useContext, useEffect, useState } from 'react'
 import { supabase, hasSupabaseConfig } from '../lib/supabase'
 
 const AuthContext = createContext()
+const APP_ALLOWED_ROLES = ['Administrador', 'Vendedor']
 
-export function AuthProvider({ children }){
-  const [user, setUser] = useState(undefined) // undefined = loading, null = no user, object = authenticated
+function normalizeRoleName(role) {
+  return String(role || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim()
+}
 
-  // Helper to verify and enforce 12h session expiration
-  const checkSessionExpiry = async () => {
-    if (!supabase || !hasSupabaseConfig()) {
-      return false
+function isAppAllowedRole(role) {
+  return APP_ALLOWED_ROLES.some(
+    (allowedRole) => normalizeRoleName(allowedRole) === normalizeRoleName(role)
+  )
+}
+
+async function loadProfileAndRole(sessionUser) {
+  let profile = null
+  let authError = null
+
+  try {
+    const { data: userById, error: userByIdError } = await supabase
+      .from('usuarios')
+      .select('id, email, nombre, role_id, activo')
+      .eq('id', sessionUser.id)
+      .maybeSingle()
+
+    if (userByIdError) {
+      authError = userByIdError.message
     }
 
-    const loginTimeStr = localStorage.getItem('login_time')
-    if (loginTimeStr) {
-      const loginTime = parseInt(loginTimeStr)
-      const twelveHoursMs = 12 * 60 * 60 * 1000
-      if (Date.now() - loginTime > twelveHoursMs) {
-        localStorage.removeItem('login_time')
-        await supabase.auth.signOut()
-        setUser(null)
-        alert('Tu sesión ha expirado tras 12 horas. Por seguridad, inicia sesión nuevamente.')
-        window.location.href = '/login'
-        return true
+    if (userById) {
+      profile = userById
+    } else if (sessionUser.email) {
+      const { data: userByEmail, error: userByEmailError } = await supabase
+        .from('usuarios')
+        .select('id, email, nombre, role_id, activo')
+        .ilike('email', sessionUser.email)
+        .maybeSingle()
+
+      if (userByEmailError) {
+        authError = authError
+          ? `${authError} | ${userByEmailError.message}`
+          : userByEmailError.message
       }
+
+      profile = userByEmail ?? null
     }
-    return false
+  } catch (error) {
+    console.error('[Auth] Exception fetching profile:', error)
+    authError = String(error?.message || error)
+    profile = null
   }
 
-  useEffect(()=>{
+  let role = null
+  if (profile?.role_id) {
+    try {
+      const { data: roleData, error: roleError } = await supabase
+        .from('roles')
+        .select('nombre')
+        .eq('id', profile.role_id)
+        .maybeSingle()
+
+      if (roleError) {
+        authError = authError
+          ? `${authError} | ${roleError.message}`
+          : roleError.message
+      }
+
+      role = roleData?.nombre ?? null
+    } catch (error) {
+      console.error('[Auth] Exception fetching role:', error)
+      authError = authError
+        ? `${authError} | ${String(error?.message || error)}`
+        : String(error?.message || error)
+    }
+  }
+
+  return { profile, role, authError }
+}
+
+function getAccessDeniedMessage({ profile, role }) {
+  if (!profile) {
+    return 'Tu cuenta no tiene un perfil interno autorizado para usar este sistema.'
+  }
+
+  if (profile.activo === false) {
+    return 'Esta cuenta ha sido desactivada por el administrador.'
+  }
+
+  if (!role || !isAppAllowedRole(role)) {
+    return 'Tu cuenta no tiene un rol autorizado para acceder a Lokitos POS.'
+  }
+
+  return null
+}
+
+export function AuthProvider({ children }) {
+  const [user, setUser] = useState(undefined)
+
+  useEffect(() => {
     let mounted = true
 
     if (!supabase || !hasSupabaseConfig()) {
@@ -38,195 +112,111 @@ export function AuthProvider({ children }){
       }
     }
 
-    async function load(){
-      if (!supabase || !hasSupabaseConfig()) {
-        setUser(null)
+    async function applySession(session, options = {}) {
+      const { shouldRedirectOnFailure = false, showAlertOnFailure = false } = options
+
+      if (!session) {
+        if (mounted) setUser(null)
         return
       }
 
-      const isExpired = await checkSessionExpiry()
-      if (isExpired) return
-
-      const { data } = await supabase.auth.getSession()
-      const session = data?.session ?? null
-      if(!mounted) return
-      if(!session){
-        setUser(null)
-        return
-      }
-
-      // Helper function to fetch profile and role
-      const getProfileAndRole = async (sessionUser) => {
-        let profile = null
-        let authError = null
-
-        try {
-          // 1. Try matching by UUID
-          const { data: uById, error: errId } = await supabase
-            .from('usuarios')
-            .select('id, nombre, role_id, activo')
-            .eq('id', sessionUser.id)
-            .maybeSingle()
-
-          if (errId) {
-            console.warn('[Auth] Error querying usuarios by ID:', errId.message)
-            authError = errId.message
-          }
-
-          if (uById) {
-            profile = uById
-          } else if (sessionUser.email) {
-            // 2. Fallback to case-insensitive email
-            const { data: uByEmail, error: errEmail } = await supabase
-              .from('usuarios')
-              .select('id, nombre, role_id, activo')
-              .ilike('email', sessionUser.email)
-              .maybeSingle()
-
-            if (errEmail) {
-              console.warn('[Auth] Error querying usuarios by email:', errEmail.message)
-              authError = authError ? `${authError} | ${errEmail.message}` : errEmail.message
-            }
-            profile = uByEmail ?? null
-          }
-        } catch (e) {
-          console.error('[Auth] Exception fetching profile:', e)
-          authError = String(e?.message || e)
-          profile = null
-        }
-
-        let role = null
-        if (profile?.role_id) {
-          try {
-            const { data: r, error: errRole } = await supabase
-              .from('roles')
-              .select('nombre')
-              .eq('id', profile.role_id)
-              .maybeSingle()
-
-            if (errRole) {
-              console.warn('[Auth] Error querying roles:', errRole.message)
-              authError = authError ? `${authError} | Role Error: ${errRole.message}` : errRole.message
-            }
-            role = r?.nombre ?? null
-          } catch (e) {
-            console.error('[Auth] Exception fetching role:', e)
-            role = null
-          }
-        }
-
-        return { profile, role, authError }
-      }
-
-      const { profile, role, authError } = await getProfileAndRole(session.user)
+      const { profile, role, authError } = await loadProfileAndRole(session.user)
       if (!mounted) return
 
-      // Check if user account is deactivated
-      if (profile && profile.activo === false) {
-        localStorage.removeItem('login_time')
+      const accessDeniedMessage = getAccessDeniedMessage({ profile, role })
+      if (accessDeniedMessage) {
         await supabase.auth.signOut()
+        if (!mounted) return
+
         setUser(null)
-        alert('Esta cuenta ha sido desactivada por el administrador.')
-        window.location.href = '/login'
+
+        if (showAlertOnFailure) {
+          alert(accessDeniedMessage)
+        }
+
+        if (shouldRedirectOnFailure && window.location.pathname !== '/login') {
+          window.location.href = '/login'
+        }
         return
       }
 
-      setUser({ sessionUser: session.user, profile, role, authError })
+      setUser({
+        sessionUser: session.user,
+        profile,
+        role,
+        authError,
+      })
+    }
+
+    async function load() {
+      const { data } = await supabase.auth.getSession()
+      await applySession(data?.session ?? null)
     }
 
     load()
 
-    const listener = supabase.auth.onAuthStateChange(async (event, session) => {
-      if(!mounted) return
-      
-      if(!session){
-        localStorage.removeItem('login_time')
-        setUser(null)
-        return
-      }
-
-      // Check if session has expired (12 hours)
-      const isExpired = await checkSessionExpiry()
-      if (isExpired) return
-
-      if (event === 'SIGNED_IN') {
-        localStorage.setItem('login_time', Date.now().toString())
-      }
-
-      let profile = null
-      let role = null
-      try {
-        const { data: uById } = await supabase
-          .from('usuarios')
-          .select('id, nombre, role_id, activo')
-          .eq('id', session.user.id)
-          .maybeSingle()
-
-        if (uById) {
-          profile = uById
-        } else if (session.user.email) {
-          const { data: uByEmail } = await supabase
-            .from('usuarios')
-            .select('id, nombre, role_id, activo')
-            .ilike('email', session.user.email)
-            .maybeSingle()
-          profile = uByEmail ?? null
-        }
-
-        if (profile?.role_id) {
-          const { data: r } = await supabase
-            .from('roles')
-            .select('nombre')
-            .eq('id', profile.role_id)
-            .maybeSingle()
-          role = r?.nombre ?? null
-        }
-      } catch (e) {
-        console.error('[Auth] Error in onAuthStateChange profile fetch:', e)
-      }
-      
-      // Check if user is active
-      if (profile && profile.activo === false) {
-        localStorage.removeItem('login_time')
-        await supabase.auth.signOut()
-        setUser(null)
-        alert('Esta cuenta ha sido desactivada por el administrador.')
-        window.location.href = '/login'
-        return
-      }
-
-      setUser({ sessionUser: session.user, profile, role })
+    const listener = supabase.auth.onAuthStateChange(async (_event, session) => {
+      if (!mounted) return
+      await applySession(session, {
+        shouldRedirectOnFailure: true,
+        showAlertOnFailure: Boolean(session),
+      })
     })
 
-    // Check expiry every minute in case the app is left open
-    const interval = setInterval(() => {
-      checkSessionExpiry()
-    }, 60000)
-
-    return ()=>{
+    return () => {
       mounted = false
-      clearInterval(interval)
-      try{ listener?.data?.subscription?.unsubscribe?.() }catch(e){}
+      try {
+        listener?.data?.subscription?.unsubscribe?.()
+      } catch (error) {
+        console.error('[Auth] Error unsubscribing auth listener:', error)
+      }
     }
-  },[])
+  }, [])
 
   const signIn = async (email, password) => {
     if (!supabase || !hasSupabaseConfig()) {
-      return { error: { message: 'Falta configurar Supabase en Vercel. Revisa las variables VITE_SUPABASE_URL y VITE_SUPABASE_ANON_KEY.' } }
+      return {
+        error: {
+          message:
+            'Falta configurar Supabase en Vercel. Revisa las variables VITE_SUPABASE_URL y VITE_SUPABASE_ANON_KEY.',
+        },
+      }
     }
 
-    const res = await supabase.auth.signInWithPassword({ email, password })
-    if (res.data?.session) {
-      localStorage.setItem('login_time', Date.now().toString())
+    const result = await supabase.auth.signInWithPassword({ email, password })
+    if (result.error || !result.data?.session) {
+      return result
     }
-    return res
+
+    const { profile, role } = await loadProfileAndRole(result.data.session.user)
+    const accessDeniedMessage = getAccessDeniedMessage({ profile, role })
+
+    if (accessDeniedMessage) {
+      await supabase.auth.signOut()
+      setUser(null)
+      return {
+        data: result.data,
+        error: { message: accessDeniedMessage },
+      }
+    }
+
+    setUser({
+      sessionUser: result.data.session.user,
+      profile,
+      role,
+      authError: null,
+    })
+
+    return result
   }
 
-  const signOut = async ()=>{
-    localStorage.removeItem('login_time')
+  const signOut = async () => {
     if (!supabase || !hasSupabaseConfig()) {
+      setUser(null)
       return { error: null }
     }
+
+    setUser(null)
     return supabase.auth.signOut()
   }
 
@@ -237,4 +227,4 @@ export function AuthProvider({ children }){
   )
 }
 
-export const useAuth = ()=> useContext(AuthContext)
+export const useAuth = () => useContext(AuthContext)

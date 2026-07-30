@@ -1,0 +1,12 @@
+Lokitos POS agradece los reportes responsables de seguridad.
+
+Canal de contacto:
+- santiagoesdras501@gmail.com
+
+Lineamientos:
+- No realices pruebas destructivas ni que afecten disponibilidad.
+- No exfiltrar ni publicar datos de clientes, ventas, usuarios o configuracion interna.
+- Comparte pasos de reproduccion, impacto y evidencia minima necesaria.
+
+Respuesta esperada:
+- Se revisara el reporte y se confirmara recepcion en un tiempo razonable.

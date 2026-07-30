@@ -1,15 +1,15 @@
-import { createClient } from '@supabase/supabase-js'
+import {
+  corsHeaders,
+  jsonResponse,
+  readJsonBody,
+  requireAuthenticatedUser,
+  serviceClient,
+} from '../_shared/security.ts'
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-  'Access-Control-Allow-Methods': 'POST, GET, OPTIONS, PUT, DELETE',
+type SaleItemInput = {
+  producto_id?: string
+  cantidad?: number
 }
-
-const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? ''
-const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? Deno.env.get('SUPABASE_SERVICE_ROLE') ?? ''
-
-const sb = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -17,33 +17,112 @@ Deno.serve(async (req) => {
   }
 
   try {
-    let body: any = {}
-    try {
-      const raw = await req.json()
-      body = typeof raw === 'string' ? JSON.parse(raw) : (raw || {})
-    } catch {
-      body = {}
+    const { errorResponse, auth } = await requireAuthenticatedUser(req, ['Vendedor', 'Administrador'])
+    if (errorResponse) return errorResponse
+
+    const body = await readJsonBody(req)
+    const { items, metodo_pago_id } = body || {}
+
+    if (!Array.isArray(items) || items.length === 0 || !metodo_pago_id) {
+      return jsonResponse({ error: 'Invalid payload' }, 400)
     }
 
-    const { user_id, items, total, metodo_pago_id } = body
-    if (!user_id || !Array.isArray(items) || items.length === 0) {
-      return new Response(JSON.stringify({ error: 'Invalid payload' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+    const normalizedItems = items.map((item: SaleItemInput) => ({
+      producto_id: item?.producto_id,
+      cantidad: Number.parseInt(String(item?.cantidad || 0), 10),
+    }))
+
+    const hasInvalidItem = normalizedItems.some(
+      (item) => !item.producto_id || !Number.isInteger(item.cantidad) || item.cantidad <= 0
+    )
+    if (hasInvalidItem) {
+      return jsonResponse({ error: 'Invalid payload: items invalidos.' }, 400)
     }
 
-    // Insert venta
-    const { data: venta, error: errVenta } = await sb.from('ventas').insert({ usuario_id: user_id, total, metodo_pago_id }).select().single()
-    if (errVenta) throw errVenta
+    const uniqueProductIds = Array.from(new Set(normalizedItems.map((item) => item.producto_id))) as string[]
 
-    const detalles = items.map((it: any) => ({ venta_id: venta.id, producto_id: it.producto_id, cantidad: it.cantidad, precio_unitario: it.precio_unitario }))
-    const { error: errDetalle } = await sb.from('detalle_venta').insert(detalles)
-    if (errDetalle) throw errDetalle
+    const { data: products, error: productsError } = await serviceClient
+      .from('productos')
+      .select('id, nombre, precio, activo')
+      .in('id', uniqueProductIds)
 
-    // Registrar auditoría
-    await sb.from('auditoria').insert({ entidad: 'ventas', entidad_id: venta.id, accion: 'INSERT', usuario_id: user_id, datos_previos: null, datos_nuevos: venta })
+    if (productsError) throw productsError
 
-    return new Response(JSON.stringify({ success: true, venta_id: venta.id }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
-  } catch (err: any) {
-    console.error('register-sale error', err)
-    return new Response(JSON.stringify({ error: err.message ?? String(err) }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+    if (!products || products.length !== uniqueProductIds.length) {
+      return jsonResponse({ error: 'Invalid payload: uno o mas productos no existen.' }, 400)
+    }
+
+    const inactiveProduct = products.find((product: { activo: boolean }) => product.activo !== true)
+    if (inactiveProduct) {
+      return jsonResponse({ error: 'Invalid payload: uno o mas productos estan inactivos.' }, 400)
+    }
+
+    const { data: paymentMethod, error: paymentMethodError } = await serviceClient
+      .from('metodos_pago')
+      .select('id')
+      .eq('id', metodo_pago_id)
+      .maybeSingle()
+
+    if (paymentMethodError) throw paymentMethodError
+    if (!paymentMethod) {
+      return jsonResponse({ error: 'Invalid payload: metodo de pago invalido.' }, 400)
+    }
+
+    const details = normalizedItems.map((item) => {
+      const product = products.find((currentProduct: { id: string }) => currentProduct.id === item.producto_id)
+      return {
+        producto_id: item.producto_id,
+        cantidad: item.cantidad,
+        precio_unitario: Number(product?.precio || 0),
+      }
+    })
+
+    const computedTotal = details.reduce(
+      (sum, item) => sum + item.precio_unitario * item.cantidad,
+      0
+    )
+
+    const { data: sale, error: saleError } = await serviceClient
+      .from('ventas')
+      .insert({
+        usuario_id: auth.profile.id,
+        total: computedTotal,
+        metodo_pago_id,
+      })
+      .select()
+      .single()
+
+    if (saleError) throw saleError
+
+    const saleDetails = details.map((item) => ({
+      venta_id: sale.id,
+      producto_id: item.producto_id,
+      cantidad: item.cantidad,
+      precio_unitario: item.precio_unitario,
+    }))
+
+    const { error: detailsError } = await serviceClient.from('detalle_venta').insert(saleDetails)
+    if (detailsError) throw detailsError
+
+    await serviceClient.from('auditoria').insert({
+      entidad: 'ventas',
+      entidad_id: sale.id,
+      accion: 'INSERT',
+      usuario_id: auth.profile.id,
+      datos_previos: null,
+      datos_nuevos: sale,
+    })
+
+    return jsonResponse({ success: true, venta_id: sale.id, total: computedTotal })
+  } catch (error: any) {
+    console.error('register-sale error', error)
+    return jsonResponse(
+      {
+        error: error?.message ?? String(error),
+        details: error?.details ?? null,
+        hint: error?.hint ?? null,
+      },
+      500
+    )
   }
 })

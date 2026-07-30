@@ -2,6 +2,7 @@ import React, { useState } from 'react'
 import ProtectedRoute from '../components/ProtectedRoute'
 import { supabase } from '../lib/supabase'
 import { formatCurrency } from '../lib/currency'
+import { getFunctionErrorMessage } from '../lib/functionErrors'
 
 export default function Reportes() {
   const [from, setFrom] = useState('')
@@ -30,7 +31,7 @@ export default function Reportes() {
       setReport(res.data || null)
     } catch (err) {
       console.error(err)
-      alert(err.message || 'Error al generar el reporte')
+      alert(await getFunctionErrorMessage(err, 'Error al generar el reporte'))
     } finally {
       setLoading(false)
     }

@@ -1,15 +1,10 @@
-import { createClient } from '@supabase/supabase-js'
-
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-  'Access-Control-Allow-Methods': 'POST, GET, OPTIONS, PUT, DELETE',
-}
-
-const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? ''
-const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? Deno.env.get('SUPABASE_SERVICE_ROLE') ?? ''
-
-const sb = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
+import {
+  corsHeaders,
+  jsonResponse,
+  readJsonBody,
+  requireAuthenticatedUser,
+  serviceClient,
+} from '../_shared/security.ts'
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -17,27 +12,50 @@ Deno.serve(async (req) => {
   }
 
   try {
-    let body: any = {}
-    try {
-      const raw = await req.json()
-      body = typeof raw === 'string' ? JSON.parse(raw) : (raw || {})
-    } catch {
-      body = {}
+    const { errorResponse, auth } = await requireAuthenticatedUser(req, ['Vendedor', 'Administrador'])
+    if (errorResponse) return errorResponse
+
+    const body = await readJsonBody(req)
+    const titulo = String(body?.titulo || '').trim()
+    const comentario = String(body?.comentario || '').trim()
+    const monto = Number.parseFloat(String(body?.monto || 0))
+
+    if (!titulo || !Number.isFinite(monto) || monto <= 0) {
+      return jsonResponse({ error: 'Invalid payload' }, 400)
     }
 
-    const { usuario_id, titulo, monto, comentario } = body
-    if (!usuario_id || !titulo || !monto) {
-      return new Response(JSON.stringify({ error: 'Invalid payload' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
-    }
+    const { data: expense, error: expenseError } = await serviceClient
+      .from('gastos')
+      .insert({
+        titulo,
+        monto,
+        comentario,
+        usuario_id: auth.profile.id,
+      })
+      .select()
+      .single()
 
-    const { data: gasto, error } = await sb.from('gastos').insert({ titulo, monto, comentario, usuario_id }).select().single()
-    if (error) throw error
+    if (expenseError) throw expenseError
 
-    await sb.from('auditoria').insert({ entidad: 'gastos', entidad_id: gasto.id, accion: 'INSERT', usuario_id, datos_previos: null, datos_nuevos: gasto })
+    await serviceClient.from('auditoria').insert({
+      entidad: 'gastos',
+      entidad_id: expense.id,
+      accion: 'INSERT',
+      usuario_id: auth.profile.id,
+      datos_previos: null,
+      datos_nuevos: expense,
+    })
 
-    return new Response(JSON.stringify({ success: true, gasto_id: gasto.id }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
-  } catch (err: any) {
-    console.error('register-expense error', err)
-    return new Response(JSON.stringify({ error: err.message ?? String(err) }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+    return jsonResponse({ success: true, gasto_id: expense.id })
+  } catch (error: any) {
+    console.error('register-expense error', error)
+    return jsonResponse(
+      {
+        error: error?.message ?? String(error),
+        details: error?.details ?? null,
+        hint: error?.hint ?? null,
+      },
+      500
+    )
   }
 })

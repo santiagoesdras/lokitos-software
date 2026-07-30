@@ -1,10 +1,9 @@
 import React, { useState } from 'react'
-import { useAuth } from './AuthProvider'
 import { supabase } from '../lib/supabase'
 import { formatCurrencyLabel } from '../lib/currency'
+import { getFunctionErrorMessage } from '../lib/functionErrors'
 
 export default function ExpenseForm({ onSaved }) {
-  const { user } = useAuth()
   const [titulo, setTitulo] = useState('')
   const [monto, setMonto] = useState('')
   const [comentario, setComentario] = useState('')
@@ -22,7 +21,6 @@ export default function ExpenseForm({ onSaved }) {
     setLoading(true)
     try {
       const payload = {
-        usuario_id: user?.profile?.id ?? null,
         titulo: titulo.trim(),
         monto: parseFloat(monto),
         comentario: comentario.trim()
@@ -43,7 +41,7 @@ export default function ExpenseForm({ onSaved }) {
       if (onSaved) onSaved()
     } catch (err) {
       console.error(err)
-      alert(err.message || 'Error al registrar el gasto')
+      alert(await getFunctionErrorMessage(err, 'Error al registrar el gasto'))
     } finally {
       setLoading(false)
     }

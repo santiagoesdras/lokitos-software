@@ -2,10 +2,10 @@ import React, { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../components/AuthProvider'
 import { formatCurrency } from '../lib/currency'
+import { getFunctionErrorMessage } from '../lib/functionErrors'
 
 export default function Ventas() {
   const { user } = useAuth()
-  const userId = user?.profile?.id ?? null
 
   const [products, setProducts] = useState([])
   const [categories, setCategories] = useState([])
@@ -104,13 +104,10 @@ export default function Ventas() {
     setLoading(true)
     try {
       const payload = {
-        user_id: userId,
         items: cart.map((i) => ({
           producto_id: i.producto_id,
-          cantidad: i.cantidad,
-          precio_unitario: i.precio_unitario
+          cantidad: i.cantidad
         })),
-        total,
         metodo_pago_id: metodoPago
       }
 
@@ -138,7 +135,7 @@ export default function Ventas() {
       setCart([]) // Clear cart
     } catch (err) {
       console.error(err)
-      alert(err.message || 'Error al procesar la venta')
+      alert(await getFunctionErrorMessage(err, 'Error al procesar la venta'))
     } finally {
       setLoading(false)
     }

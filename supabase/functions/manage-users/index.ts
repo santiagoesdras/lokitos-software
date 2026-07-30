@@ -1,15 +1,22 @@
-import { createClient } from '@supabase/supabase-js'
+import {
+  corsHeaders,
+  jsonResponse,
+  readJsonBody,
+  requireAuthenticatedUser,
+  serviceClient,
+} from '../_shared/security.ts'
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-  'Access-Control-Allow-Methods': 'POST, GET, OPTIONS, PUT, DELETE',
+function formatErrorMessage(prefix: string, error: unknown) {
+  if (error instanceof Error && error.message) {
+    return `${prefix}: ${error.message}`
+  }
+
+  if (typeof error === 'object' && error !== null && 'message' in error) {
+    return `${prefix}: ${String((error as { message?: unknown }).message)}`
+  }
+
+  return prefix
 }
-
-const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? ''
-const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? Deno.env.get('SUPABASE_SERVICE_ROLE') ?? ''
-
-const sb = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -17,165 +24,143 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const authHeader = req.headers.get('Authorization')
-    if (!authHeader) {
-      return new Response(JSON.stringify({ error: 'Missing Authorization header' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
-    }
+    const { errorResponse, auth } = await requireAuthenticatedUser(req, ['Administrador'])
+    if (errorResponse) return errorResponse
 
-    // Verify caller authentication using JWT
-    const token = authHeader.replace('Bearer ', '')
-    const { data: { user: callerUser }, error: authErr } = await sb.auth.getUser(token)
-    if (authErr || !callerUser) {
-      return new Response(JSON.stringify({ error: 'Unauthorized: Invalid token' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
-    }
-
-    // Verify caller role (Must be Administrador)
-    const { data: callerProfile, error: profErr } = await sb
-      .from('usuarios')
-      .select('role_id')
-      .eq('email', callerUser.email)
-      .single()
-
-    if (profErr || !callerProfile) {
-      return new Response(JSON.stringify({ error: 'Caller profile not found' }), { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
-    }
-
-    const { data: callerRole, error: roleErr } = await sb
-      .from('roles')
-      .select('nombre')
-      .eq('id', callerProfile.role_id)
-      .single()
-
-    if (roleErr || callerRole?.nombre !== 'Administrador') {
-      return new Response(JSON.stringify({ error: 'Forbidden: Admin role required' }), { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
-    }
-
-    // Parse requested action
-    let body: any = {}
-    try {
-      const raw = await req.json()
-      body = typeof raw === 'string' ? JSON.parse(raw) : (raw || {})
-    } catch {
-      body = {}
-    }
-
+    const body = await readJsonBody(req)
     const { action, email, password, nombre, role_id, activo, userId } = body
 
     if (action === 'create') {
       if (!email || !password || !nombre || !role_id) {
-        return new Response(JSON.stringify({ error: 'Missing required fields for user creation' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+        return jsonResponse({ error: 'Missing required fields for user creation' }, 400)
       }
 
-      // 1. Create auth user in Supabase Auth
-      const { data: authData, error: createAuthErr } = await sb.auth.admin.createUser({
+      const { data: authData, error: createAuthError } = await serviceClient.auth.admin.createUser({
         email,
         password,
-        email_confirm: true
+        email_confirm: true,
       })
 
-      if (createAuthErr || !authData.user) {
-        throw createAuthErr || new Error('Auth user creation failed')
+      if (createAuthError || !authData.user) {
+        throw createAuthError || new Error('Auth user creation failed')
       }
 
-      // 2. Create profile in usuarios table
-      const { data: newProfile, error: createProfileErr } = await sb
+      const { data: newProfile, error: createProfileError } = await serviceClient
         .from('usuarios')
         .insert({
           id: authData.user.id,
           email,
           nombre,
           role_id,
-          activo: true
+          activo: true,
         })
         .select()
         .single()
 
-      if (createProfileErr) {
-        // Cleanup created auth user if profile insert fails
-        await sb.auth.admin.deleteUser(authData.user.id)
-        throw createProfileErr
+      if (createProfileError) {
+        await serviceClient.auth.admin.deleteUser(authData.user.id)
+        throw createProfileError
       }
 
-      // Log audit
-      await sb.from('auditoria').insert({
+      await serviceClient.from('auditoria').insert({
         entidad: 'usuarios',
         entidad_id: newProfile.id,
         accion: 'INSERT',
-        usuario_id: callerUser.id,
+        usuario_id: auth.profile.id,
         datos_previos: null,
-        datos_nuevos: newProfile
+        datos_nuevos: newProfile,
       })
 
-      return new Response(JSON.stringify({ success: true, user: newProfile }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
-    } 
-    
+      return jsonResponse({ success: true, user: newProfile })
+    }
+
     if (action === 'update') {
-      if (!userId || !nombre || !role_id) {
-        return new Response(JSON.stringify({ error: 'Missing required fields for update' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+      if (!userId || !nombre || !role_id || typeof activo !== 'boolean') {
+        return jsonResponse({ error: 'Missing required fields for update' }, 400)
       }
 
-      // Get current profile for audit
-      const { data: oldProfile } = await sb.from('usuarios').select('*').eq('id', userId).single()
+      const { data: oldProfile, error: oldProfileError } = await serviceClient
+        .from('usuarios')
+        .select('*')
+        .eq('id', userId)
+        .single()
 
-      // Update usuarios table
-      const { data: updatedProfile, error: updateErr } = await sb
+      if (oldProfileError) throw oldProfileError
+
+      const { data: updatedProfile, error: updateError } = await serviceClient
         .from('usuarios')
         .update({
           nombre,
           role_id,
-          activo
+          activo,
         })
         .eq('id', userId)
         .select()
         .single()
 
-      if (updateErr) throw updateErr
+      if (updateError) throw updateError
 
-      // If account deactivated, ban user
-      const ban_duration = activo === false ? '87600h' : 'none'
-      await sb.auth.admin.updateUserById(userId, { ban_duration })
+      const banDuration = activo === false ? '87600h' : 'none'
+      const { error: authUpdateError } = await serviceClient.auth.admin.updateUserById(userId, {
+        ban_duration: banDuration,
+      })
 
-      // Log audit
-      await sb.from('auditoria').insert({
+      if (authUpdateError) {
+        throw new Error(
+          formatErrorMessage(
+            activo === false
+              ? 'No se pudo desactivar el acceso del usuario en Supabase Auth'
+              : 'No se pudo reactivar el acceso del usuario en Supabase Auth',
+            authUpdateError
+          )
+        )
+      }
+
+      await serviceClient.from('auditoria').insert({
         entidad: 'usuarios',
         entidad_id: userId,
         accion: 'UPDATE',
-        usuario_id: callerUser.id,
+        usuario_id: auth.profile.id,
         datos_previos: oldProfile,
-        datos_nuevos: updatedProfile
+        datos_nuevos: updatedProfile,
       })
 
-      return new Response(JSON.stringify({ success: true, user: updatedProfile }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
-    } 
-    
+      return jsonResponse({ success: true, user: updatedProfile })
+    }
+
     if (action === 'reset-password') {
       if (!userId || !password) {
-        return new Response(JSON.stringify({ error: 'Missing user ID or password' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+        return jsonResponse({ error: 'Missing user ID or password' }, 400)
       }
 
-      // Reset password in Supabase Auth
-      const { error: resetErr } = await sb.auth.admin.updateUserById(userId, {
-        password: password
+      const { error: resetError } = await serviceClient.auth.admin.updateUserById(userId, {
+        password,
       })
 
-      if (resetErr) throw resetErr
+      if (resetError) throw resetError
 
-      // Log audit
-      await sb.from('auditoria').insert({
+      await serviceClient.from('auditoria').insert({
         entidad: 'usuarios',
         entidad_id: userId,
         accion: 'RESET_PASSWORD',
-        usuario_id: callerUser.id,
+        usuario_id: auth.profile.id,
         datos_previos: null,
-        datos_nuevos: { message: 'Password reset successful' }
+        datos_nuevos: { message: 'Password reset successful' },
       })
 
-      return new Response(JSON.stringify({ success: true, message: 'Password updated successfully' }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+      return jsonResponse({ success: true, message: 'Password updated successfully' })
     }
 
-    return new Response(JSON.stringify({ error: 'Action not supported' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
-  } catch (err: any) {
-    console.error('manage-users error', err)
-    return new Response(JSON.stringify({ error: err.message ?? String(err) }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+    return jsonResponse({ error: 'Action not supported' }, 400)
+  } catch (error: any) {
+    console.error('manage-users error', error)
+    return jsonResponse(
+      {
+        error: error?.message ?? String(error),
+        details: error?.details ?? null,
+        hint: error?.hint ?? null,
+      },
+      500
+    )
   }
 })

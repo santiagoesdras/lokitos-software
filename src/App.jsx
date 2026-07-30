@@ -25,6 +25,7 @@ function Header(){
   const normalize = (str) => String(str || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim()
   const userRole = user?.role ?? user?.profile?.role ?? user?.roleName ?? user?.role_name
   const isAdmin = userRole ? normalize(userRole) === 'administrador' : false
+  const isStaff = userRole ? ['administrador', 'vendedor'].includes(normalize(userRole)) : false
 
   return (
     <header className="header">
@@ -32,8 +33,8 @@ function Header(){
       <nav>
         {user ? (
           <>
-            <Link to="/">Ventas</Link>
-            <Link to="/gastos">Gastos</Link>
+            {isStaff ? <Link to="/">Ventas</Link> : null}
+            {isStaff ? <Link to="/gastos">Gastos</Link> : null}
             {isAdmin && <Link to="/admin">Admin</Link>}
             <button onClick={handleLogout} style={{ marginLeft: 12 }}>Salir</button>
           </>
@@ -74,8 +75,8 @@ export default function App() {
         <main>
           <Routes>
             <Route path="/login" element={<Login />} />
-            <Route path="/" element={<ProtectedRoute><Ventas /></ProtectedRoute>} />
-            <Route path="/gastos" element={<ProtectedRoute><GastosPage /></ProtectedRoute>} />
+            <Route path="/" element={<ProtectedRoute allowedRoles={['Vendedor', 'Administrador']}><Ventas /></ProtectedRoute>} />
+            <Route path="/gastos" element={<ProtectedRoute allowedRoles={['Vendedor', 'Administrador']}><GastosPage /></ProtectedRoute>} />
             <Route path="/admin" element={<ProtectedRoute allowedRoles={['Administrador']}><Admin /></ProtectedRoute>} />
             <Route path="/admin/products" element={<ProtectedRoute allowedRoles={['Administrador']}><ProductsPage /></ProtectedRoute>} />
             <Route path="/admin/categories" element={<ProtectedRoute allowedRoles={['Administrador']}><AdminCategories /></ProtectedRoute>} />
