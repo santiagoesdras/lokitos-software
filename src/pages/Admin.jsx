@@ -18,7 +18,7 @@ export default function Admin(){
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 20 }}>
           <div className="panel" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
             <div>
-              <div style={{ fontSize: 32, marginBottom: 8 }}>🍔</div>
+              <div style={{ fontSize: 32, marginBottom: 8 }}>🌽</div>
               <h3 style={{ margin: '8px 0' }}>Productos</h3>
               <p style={{ color: 'var(--text-muted)', fontSize: 14, marginBottom: 16 }}>
                 Administra los platillos y bebidas, sus precios, descripciones y sube sus fotografías oficiales.

@@ -206,7 +206,7 @@ export default function Ventas() {
                       {imgUrl ? (
                         <img src={imgUrl} alt={p.nombre} className="product-image" />
                       ) : (
-                        <span>🍔</span>
+                        <span>🌽</span>
                       )}
                     </div>
                     <div className="product-info">
